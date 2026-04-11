@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weverse 商品跳轉</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .card {
+    background: rgba(22, 27, 34, 0.95);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    padding: 36px 28px;
+    max-width: 400px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  .region {
+    display: inline-block;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 20px;
+  }
+  .region-KR { background: rgba(239,68,68,0.15); color: #fca5a5; }
+  .region-JP { background: rgba(251,191,36,0.15); color: #fbbf24; }
+  .region-US { background: rgba(59,130,246,0.15); color: #93c5fd; }
+  h1 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .sub {
+    font-size: 13px;
+    color: #8b949e;
+    margin-bottom: 28px;
+    line-height: 1.5;
+  }
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.15s, opacity 0.15s;
+    -webkit-tap-highlight-color: transparent;
+    text-decoration: none;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary {
+    background: linear-gradient(135deg, #00e676, #00c853);
+    color: #000;
+    margin-bottom: 12px;
+  }
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn-secondary {
+    background: rgba(255,255,255,0.06);
+    color: #8b949e;
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .status {
+    margin-top: 24px;
+    font-size: 13px;
+    color: #58a6ff;
+    display: none;
+    line-height: 1.6;
+  }
+  .status.error { color: #ff6b6b; }
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid rgba(88,166,255,0.3);
+    border-top-color: #58a6ff;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error-msg {
+    background: rgba(239,68,68,0.1);
+    border: 1px solid rgba(239,68,68,0.3);
+    border-radius: 10px;
+    padding: 14px;
+    margin-top: 16px;
+    font-size: 13px;
+    color: #fca5a5;
+    text-align: left;
+    display: none;
+    line-height: 1.7;
+  }
+  .invalid {
+    color: #ff6b6b;
+    font-size: 15px;
+    margin-top: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="card" id="app">
+  <!-- filled by JS -->
+</div>
+
+<script>
+  var params = new URLSearchParams(window.location.search);
+  var productUrl = params.get('url') || '';
+  var region = (params.get('region') || 'US').toUpperCase();
+
+  var regionLabels = { KR: '🇰🇷 韓國 (KRW)', JP: '🇯🇵 日本 (JPY)', US: '🇺🇸 美國 (USD)' };
+  var currencyMap  = { KR: 'KRW', JP: 'JPY', US: 'USD' };
+  var currency = currencyMap[region] || 'USD';
+  var regionLabel = regionLabels[region] || region;
+
+  // Extract artist ID from the product URL to build the shop homepage.
+  var artistMatch = productUrl.match(/\/artists\/(\d+)/);
+  var artistId = artistMatch ? artistMatch[1] : '2';
+  var shopHomepage = 'https://shop.weverse.io/zh-tw/shop/' + currency + '/artists/' + artistId;
+
+  var app = document.getElementById('app');
+
+  if (!productUrl) {
+    app.innerHTML = '<p class="invalid">❌ 缺少商品連結（?url= 參數）</p>';
+  } else {
+    app.innerHTML = `
+      <span class="region region-${region}">${regionLabel}</span>
+      <h1>開啟 Weverse 商品</h1>
+      <p class="sub">點擊下方按鈕，系統會先設定地區，再自動跳轉至商品頁面</p>
+
+      <button class="btn btn-primary" id="btn-go" onclick="go()">
+        🛒 設定地區並前往商品
+      </button>
+      <a href="${encodeHTML(productUrl)}" class="btn btn-secondary">
+        直接開啟（已設定過地區）
+      </a>
+
+      <div class="status" id="status">
+        <span class="spinner"></span>
+        <span id="status-text">正在開啟 ${currency} 地區首頁...</span>
+      </div>
+
+      <div class="error-msg" id="err-msg">
+        ❌ <b>彈出視窗被阻擋！</b><br>
+        Discord 內建瀏覽器不支援自動開啟新分頁。<br><br>
+        👉 請點擊畫面右上角的<b>「在 Safari / Chrome 中開啟」</b>（Safari 圖示或分享鍵旁的指南針），
+        然後回來再按一次按鈕。<br><br>
+        或直接點上方「直接開啟」（可能需要自行在 Weverse 切換地區）。
+      </div>
+    `;
+  }
+
+  function encodeHTML(s) {
+    return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  var done = false;
+
+  function go() {
+    if (done) return;
+    var btn = document.getElementById('btn-go');
+    var status = document.getElementById('status');
+    var statusText = document.getElementById('status-text');
+    var errMsg = document.getElementById('err-msg');
+
+    var popup = window.open(shopHomepage, '_blank');
+
+    btn.textContent = '⏳ 設定中...';
+    btn.disabled = true;
+    status.style.display = 'block';
+
+    if (popup && popup.window) {
+      // Popup opened: wait ~3.5s for cookies to be written, then close & redirect.
+      setTimeout(function() {
+        done = true;
+        try { popup.close(); } catch(e) {}
+        statusText.textContent = '✅ 地區已設定，正在跳轉商品頁面...';
+        setTimeout(function() {
+          window.location.replace(productUrl);
+        }, 600);
+      }, 3500);
+    } else {
+      // Popup was blocked (common in Discord / Line in-app browser).
+      status.style.display = 'none';
+      errMsg.style.display = 'block';
+      btn.textContent = '🛒 再試一次';
+      btn.disabled = false;
+    }
+  }
+</script>
+</body>
+</html>
